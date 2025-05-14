@@ -1,0 +1,44 @@
+import React, { useState, useEffect } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'react-native';
+import { auth, observeAuthState } from '../../../src/config/firebase';
+
+// Import navigateurs
+import AuthNavigator from './AuthNavigator';
+import MainNavigator from './MainNavigator';
+
+export default function AppNavigator() {
+  const [initializing, setInitializing] = useState(true);
+  const [user, setUser] = useState(null);
+
+  // Observer le changement d'état de l'authentification
+  useEffect(() => {
+    const unsubscribe = observeAuthState((user) => {
+      setUser(user);
+      if (initializing) setInitializing(false);
+    });
+
+    // Nettoyer l'observateur lors du démontage
+    return unsubscribe;
+  }, [initializing]);
+
+  // Afficher un écran de chargement pendant l'initialisation
+  if (initializing) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar barStyle="dark-content" />
+        {/* Vous pouvez ajouter un écran de chargement ici */}
+      </SafeAreaProvider>
+    );
+  }
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar barStyle="dark-content" />
+      <NavigationContainer>
+        {user ? <MainNavigator /> : <AuthNavigator />}
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+}

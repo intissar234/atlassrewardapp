@@ -1,0 +1,460 @@
+import React, { useState } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  Alert,
+  SafeAreaView,
+  Modal,
+  ScrollView
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { signOut } from 'firebase/auth';
+import { auth } from '../../src/config/firebase';
+import { I18n } from 'i18n-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const i18n = new I18n();
+
+export default function SettingsScreen({ navigation }) {
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [showLegalModal, setShowLegalModal] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('fr'); // Français par défaut
+  
+  // Options de langue disponibles
+  const languages = [
+    { code: 'fr', name: 'Français' },
+    { code: 'en', name: 'English' },
+    { code: 'ar', name: 'العربية' }
+  ];
+  
+  // Fonction pour changer de langue
+  const changeLanguage = async (langCode) => {
+    try {
+      // Mettre à jour la langue dans i18n
+      i18n.locale = langCode;
+      
+      // Sauvegarder la préférence de langue dans AsyncStorage
+      await AsyncStorage.setItem('userLanguage', langCode);
+      
+      // Mettre à jour l'état local
+      setSelectedLanguage(langCode);
+      
+      // Fermer le modal
+      setShowLanguageModal(false);
+      
+      // Informer l'utilisateur
+      Alert.alert(
+        "Langue modifiée",
+        "La langue de l'application a été modifiée avec succès.",
+        [{ text: "OK" }]
+      );
+    } catch (error) {
+      console.error("Erreur lors du changement de langue:", error);
+      Alert.alert("Erreur", "Impossible de changer la langue de l'application.");
+    }
+  };
+  
+  // Fonction pour se déconnecter
+  const handleSignOut = async () => {
+    try {
+      // Demander confirmation
+      Alert.alert(
+        "Déconnexion",
+        "Êtes-vous sûr de vouloir vous déconnecter?",
+        [
+          { text: "Annuler", style: "cancel" },
+          { 
+            text: "Déconnexion", 
+            style: "destructive",
+            onPress: async () => {
+              await signOut(auth);
+              // Rediriger vers l'écran de connexion
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }]
+              });
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error("Erreur lors de la déconnexion:", error);
+      Alert.alert("Erreur", "Impossible de vous déconnecter. Veuillez réessayer.");
+    }
+  };
+  
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="chevron-back" size={28} color="#c60c30" />
+        </TouchableOpacity>
+        <Text style={styles.title}>Paramètres</Text>
+        <View style={styles.placeholder}></View>
+      </View>
+      
+      <ScrollView style={styles.container}>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Préférences</Text>
+          
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => setShowLanguageModal(true)}
+          >
+            <Ionicons name="language" size={24} color="#c60c30" style={styles.settingIcon} />
+            <View style={styles.settingContent}>
+              <Text style={styles.settingLabel}>Langue de l'application</Text>
+              <Text style={styles.settingValue}>
+                {languages.find(lang => lang.code === selectedLanguage)?.name || 'Français'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#999" />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Informations</Text>
+          
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => setShowLegalModal(true)}
+          >
+            <Ionicons name="document-text" size={24} color="#c60c30" style={styles.settingIcon} />
+            <View style={styles.settingContent}>
+              <Text style={styles.settingLabel}>Centre juridique</Text>
+              <Text style={styles.settingDescription}>Conditions d'utilisation, Confidentialité</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#999" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => Alert.alert("Version", "Atlas Rewards v1.0.0")}
+          >
+            <Ionicons name="information-circle" size={24} color="#c60c30" style={styles.settingIcon} />
+            <View style={styles.settingContent}>
+              <Text style={styles.settingLabel}>À propos de l'application</Text>
+              <Text style={styles.settingDescription}>Version 1.0.0</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#999" />
+          </TouchableOpacity>
+        </View>
+        
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={handleSignOut}
+        >
+          <Ionicons name="log-out" size={24} color="#FFFFFF" />
+          <Text style={styles.logoutButtonText}>Déconnexion</Text>
+        </TouchableOpacity>
+      </ScrollView>
+      
+      {/* Modal pour sélectionner la langue */}
+      <Modal
+        visible={showLanguageModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowLanguageModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Choisir la langue</Text>
+              <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                <Text style={styles.closeButton}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {languages.map((language) => (
+              <TouchableOpacity
+                key={language.code}
+                style={[
+                  styles.languageOption,
+                  selectedLanguage === language.code && styles.selectedLanguage
+                ]}
+                onPress={() => changeLanguage(language.code)}
+              >
+                <Text style={[
+                  styles.languageText,
+                  selectedLanguage === language.code && styles.selectedLanguageText
+                ]}>
+                  {language.name}
+                </Text>
+                {selectedLanguage === language.code && (
+                  <Ionicons name="checkmark" size={24} color="#c60c30" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Modal pour le centre juridique */}
+      <Modal
+        visible={showLegalModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowLegalModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Centre juridique</Text>
+              <TouchableOpacity onPress={() => setShowLegalModal(false)}>
+                <Text style={styles.closeButton}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.legalContent}>
+              <Text style={styles.legalSectionTitle}>Coordonnées du Service Client</Text>
+              
+              <TouchableOpacity 
+                style={styles.legalContactItem}
+                onPress={() => {
+                  // Fonction pour appeler le service client
+                  Alert.alert("Appel", "Fonction d'appel à implémenter");
+                }}
+              >
+                <Ionicons name="call" size={24} color="#c60c30" />
+                <View style={styles.legalContactContent}>
+                  <Text style={styles.legalContactTitle}>Téléphone</Text>
+                  <Text style={styles.legalContactInfo}>Maroc: 089000 0800 ou 3260</Text>
+                  <Text style={styles.legalContactInfo}>International: +212 522 48 97 97</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#999" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.legalContactItem}
+                onPress={() => {
+                  // Fonction pour envoyer un email
+                  Alert.alert("Email", "Fonction d'email à implémenter");
+                }}
+              >
+                <Ionicons name="mail" size={24} color="#c60c30" />
+                <View style={styles.legalContactContent}>
+                  <Text style={styles.legalContactTitle}>E-mail</Text>
+                  <Text style={styles.legalContactInfo}>Principal: callcenter@royalairmaroc.com</Text>
+                  <Text style={styles.legalContactInfo}>Réclamations: serviceclient@royalairmaroc.com</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#999" />
+              </TouchableOpacity>
+              
+              <Text style={styles.legalSectionTitle}>À propos de Royal Air Maroc</Text>
+              <Text style={styles.legalText}>
+                Royal Air Maroc est une société anonyme régie par la loi n° 17-95 
+                relative aux sociétés anonymes, modifiée par la loi n° 20-05 du 23 mai 2008. 
+                Son capital social est de 2.021.984.200,00 DH, détenu à 96,80 % par l'État.
+              </Text>
+              
+              <Text style={styles.legalText}>
+                Pour toute question juridique ou litige, vous pouvez contacter le service 
+                client aux coordonnées mentionnées ci-dessus. En cas de besoin d'assistance 
+                juridique spécifique, il est recommandé de consulter un avocat ou un conseiller juridique.
+              </Text>
+              
+              <Text style={styles.legalSectionTitle}>Adresse Postale</Text>
+              <Text style={styles.legalText}>
+                Royal Air Maroc
+                Aéroport Mohammed V
+                Casablanca, Maroc
+              </Text>
+              
+              <Text style={styles.legalSectionTitle}>Politique de confidentialité</Text>
+              <Text style={styles.legalText}>
+                La protection de vos données personnelles est notre priorité. Nous 
+                recueillons, utilisons et stockons vos informations personnelles 
+                conformément à la législation marocaine sur la protection des données 
+                et au Règlement Général sur la Protection des Données (RGPD).
+              </Text>
+              
+              <Text style={styles.legalSectionTitle}>Conditions d'utilisation</Text>
+              <Text style={styles.legalText}>
+                L'utilisation de l'application Atlas Rewards est soumise à l'acceptation 
+                des présentes conditions. Les points accumulés dans le cadre du programme 
+                de fidélité sont valables pour une durée de 36 mois à compter de la date 
+                d'acquisition. Les récompenses obtenues sont soumises à disponibilité.
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    padding: 5,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  placeholder: {
+    width: 28,
+  },
+  container: {
+    flex: 1,
+  },
+  section: {
+    marginBottom: 20,
+    backgroundColor: '#fff',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#666',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  settingIcon: {
+    marginRight: 15,
+  },
+  settingContent: {
+    flex: 1,
+  },
+  settingLabel: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 2,
+  },
+  settingValue: {
+    fontSize: 14,
+    color: '#666',
+  },
+  settingDescription: {
+    fontSize: 14,
+    color: '#999',
+  },
+  logoutButton: {
+    backgroundColor: '#c60c30',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 15,
+    margin: 20,
+    borderRadius: 5,
+  },
+  logoutButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 10,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    margin: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    fontSize: 24,
+    color: '#999',
+  },
+  languageOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  selectedLanguage: {
+    backgroundColor: '#f9f9f9',
+  },
+  languageText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  selectedLanguageText: {
+    fontWeight: 'bold',
+    color: '#c60c30',
+  },
+  legalContent: {
+    padding: 15,
+  },
+  legalSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 15,
+    marginBottom: 10,
+  },
+  legalText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 10,
+    lineHeight: 20,
+  },
+  legalContactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#f9f9f9',
+    borderRadius: 5,
+    marginBottom: 10,
+  },
+  legalContactContent: {
+    flex: 1,
+    marginLeft: 15,
+  },
+  legalContactTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  legalContactInfo: {
+    fontSize: 14,
+    color: '#666',
+  },
+});
