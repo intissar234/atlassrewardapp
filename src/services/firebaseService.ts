@@ -10,7 +10,8 @@ import {
   query,
   where,
   getDocs,
-  addDoc
+  addDoc,
+  orderBy
 } from 'firebase/firestore';
 
 /**
@@ -497,8 +498,6 @@ function generateUniqueCode() {
   return Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
-// Export auth for convenience
-export { auth };
 /**
  * Get user notifications
  * @returns {Promise<Array>} Array of notifications
@@ -510,8 +509,7 @@ export const getUserNotifications = async () => {
     
     const notificationsQuery = query(
       collection(db, "notifications"),
-      where("userId", "==", user.uid),
-      orderBy("date", "desc")
+      where("userId", "==", user.uid)
     );
     
     const querySnapshot = await getDocs(notificationsQuery);
@@ -641,65 +639,146 @@ export const validateQRCode = async (qrData) => {
     console.error("Error validating QR code:", error);
     throw error;
   }
-};/**
-* Récupérer la liste des jeux disponibles
-* @returns {Promise<Array>} Liste des jeux
-*/
-export const getAvailableGames = async () => {
- try {
-   const gamesQuery = query(collection(db, "games"), where("active", "==", true));
-   const querySnapshot = await getDocs(gamesQuery);
-   
-   const games = [];
-   querySnapshot.forEach((doc) => {
-     const data = doc.data();
-     games.push({
-       id: doc.id,
-       title: data.title,
-       description: data.description,
-       type: data.type,
-       pointsReward: data.pointsReward,
-       gameData: data.gameData
-     });
-   });
-   
-   return games;
- } catch (error) {
-   console.error("Error getting games:", error);
-   throw error;
- }
 };
 
 /**
-* Enregistrer un résultat de jeu
-* @param {string} gameId - ID du jeu
-* @param {number} score - Score obtenu
-* @param {number} pointsEarned - Points gagnés
-* @returns {Promise<boolean>} Statut de succès
-*/
-export const saveGameResult = async (gameId, score, pointsEarned) => {
- try {
-   const user = auth.currentUser;
-   if (!user) throw new Error("User not authenticated");
-   
-   // Enregistrer le résultat
-   await addDoc(collection(db, "gameResults"), {
-     userId: user.uid,
-     gameId: gameId,
-     score: score,
-     pointsEarned: pointsEarned,
-     playedAt: serverTimestamp()
-   });
-   
-   // Ajouter les points gagnés
-   await addPoints(pointsEarned, `Jeu: ${gameId}`);
-   
-   // Mettre à jour le compteur de jeux joués aujourd'hui
-   await updateGamesPlayed();
-   
-   return true;
- } catch (error) {
-   console.error("Error saving game result:", error);
-   throw error;
- }
+ * Récupérer la liste des jeux disponibles
+ * @returns {Promise<Array>} Liste des jeux
+ */
+export const getAvailableGames = async () => {
+  try {
+    const gamesQuery = query(collection(db, "games"), where("active", "==", true));
+    const querySnapshot = await getDocs(gamesQuery);
+    
+    const games = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      games.push({
+        id: doc.id,
+        title: data.title,
+        description: data.description,
+        type: data.type,
+        pointsReward: data.pointsReward,
+        gameData: data.gameData
+      });
+    });
+    
+    return games;
+  } catch (error) {
+    console.error("Error getting games:", error);
+    throw error;
+  }
 };
+
+/**
+ * Sauvegarde le résultat d'un jeu
+ */
+export const saveGameResult = async (gameType, score, pointsEarned) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("User not authenticated");
+    
+    // Enregistrer le résultat du jeu
+    await addDoc(collection(db, "gameResults"), {
+      userId: user.uid,
+      gameType: gameType,
+      score: score,
+      pointsEarned: pointsEarned,
+      playedAt: serverTimestamp()
+    });
+    
+    // Ajouter les points gagnés
+    await addPoints(pointsEarned, `Jeu: ${gameType}`);
+    
+    // Mettre à jour le compteur de jeux joués aujourd'hui
+    await updateGamesPlayed();
+    
+    return true;
+  } catch (error) {
+    console.error("Error saving game result:", error);
+    throw error;
+  }
+};
+
+/**
+ * Sauvegarde le résultat d'un quiz
+ */
+export const saveQuizResult = async (score, totalQuestions, pointsEarned) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("User not authenticated");
+    
+    // Enregistrer le résultat du quiz
+    await addDoc(collection(db, "quizResults"), {
+      userId: user.uid,
+      score: score,
+      totalQuestions: totalQuestions,
+      pointsEarned: pointsEarned,
+      completedAt: serverTimestamp()
+    });
+    
+    // Mettre à jour la date du dernier quiz complété
+    await updateDoc(doc(db, "users", user.uid), {
+      lastQuizDate: new Date().toDateString(),
+      updatedAt: serverTimestamp()
+    });
+    
+    // Ajouter les points gagnés
+    await addPoints(pointsEarned, `Quiz Rapide`);
+    
+    // Mettre à jour le compteur de jeux joués aujourd'hui
+    await updateGamesPlayed();
+    
+    return true;
+  } catch (error) {
+    console.error("Error saving quiz result:", error);
+    throw error;
+  }
+};
+
+/**
+ * Vérifie si l'utilisateur peut jouer au quiz aujourd'hui
+ */
+export const canPlayQuizToday = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("User not authenticated");
+    
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+    const userData = userDoc.data();
+    
+    if (!userData) return true;
+    
+    const lastQuizDate = userData.lastQuizDate;
+    const today = new Date().toDateString();
+    
+    // Si la date du dernier quiz n'est pas aujourd'hui, l'utilisateur peut jouer
+    return lastQuizDate !== today;
+  } catch (error) {
+    console.error("Error checking quiz availability:", error);
+    throw error;
+  }
+};
+
+/**
+ * Met à jour le profil utilisateur
+ */
+export const updateUserProfile = async (userData) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("User not authenticated");
+    
+    await updateDoc(doc(db, "users", user.uid), {
+      ...userData,
+      updatedAt: serverTimestamp()
+    });
+    
+    return true;
+  } catch (error) {
+    console.error("Error updating user profile:", error);
+    throw error;
+  }
+};
+
+// Export auth for convenience
+export { auth };
