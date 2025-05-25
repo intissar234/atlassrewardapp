@@ -27,7 +27,20 @@ export const getUserProfile = async () => {
     const userDoc = await getDoc(userDocRef);
 
     if (userDoc.exists()) {
-      return userDoc.data();
+      const data = userDoc.data();
+      return {
+        ...data,
+        // Assurez-vous que tous les champs sont présents
+        firstName: data.firstName || "",
+        lastName: data.lastName || "",
+        email: data.email || user.email || "",
+        phone: data.phone || "",
+        pointsBalance: data.pointsBalance || 0,
+        gamesPlayedToday: data.gamesPlayedToday || 0,
+        lastPlayedDate: data.lastPlayedDate || new Date().toDateString(),
+        dailyRewardClaimed: data.dailyRewardClaimed || false,
+        preferredLanguage: data.preferredLanguage || "fr"
+      };
     } else {
       console.log("No user profile found");
       return null;
@@ -97,6 +110,7 @@ export const updateGamesPlayed = async () => {
       await updateDoc(userDocRef, {
         gamesPlayedToday: 1,
         lastPlayedDate: today,
+        dailyRewardClaimed: false, // Reset daily reward for new day
         updatedAt: serverTimestamp()
       });
       gamesPlayedToday = 1;
@@ -165,6 +179,116 @@ export const claimDailyReward = async (points) => {
 };
 
 /**
+ * Get user's points history
+ * @returns {Promise<Array>} Array of points transactions
+ */
+export const getPointsHistory = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("User not authenticated");
+    
+    const historyQuery = query(
+      collection(db, "pointsHistory"),
+      where("userId", "==", user.uid),
+      orderBy("timestamp", "desc")
+    );
+    
+    const querySnapshot = await getDocs(historyQuery);
+    
+    const history = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      history.push({
+        id: doc.id,
+        points: data.points,
+        source: data.source,
+        timestamp: data.timestamp
+      });
+    });
+    
+    return history;
+  } catch (error) {
+    console.error("Error getting points history:", error);
+    return []; // Retourne un tableau vide en cas d'erreur
+  }
+};
+
+/**
+ * Get user's claimed rewards
+ * @returns {Promise<Array>} Array of claimed rewards
+ */
+export const getClaimedRewards = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("User not authenticated");
+    
+    const rewardsQuery = query(
+      collection(db, "claimedRewards"),
+      where("userId", "==", user.uid),
+      orderBy("claimedAt", "desc")
+    );
+    
+    const querySnapshot = await getDocs(rewardsQuery);
+    
+    const rewards = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      rewards.push({
+        id: doc.id,
+        rewardTitle: data.rewardTitle,
+        pointsSpent: data.pointsSpent,
+        accessCode: data.accessCode,
+        claimedAt: data.claimedAt,
+        expiresAt: data.expiresAt
+      });
+    });
+    
+    return rewards;
+  } catch (error) {
+    console.error("Error getting claimed rewards:", error);
+    return []; // Retourne un tableau vide en cas d'erreur
+  }
+};
+
+/**
+ * Get user's purchased matches
+ * @returns {Promise<Array>} Array of purchased matches
+ */
+export const getPurchasedMatches = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("User not authenticated");
+    
+    const matchesQuery = query(
+      collection(db, "matchPurchases"),
+      where("userId", "==", user.uid),
+      orderBy("purchasedAt", "desc")
+    );
+    
+    const querySnapshot = await getDocs(matchesQuery);
+    
+    const matches = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      matches.push({
+        id: doc.id,
+        teamA: data.teamA,
+        teamB: data.teamB,
+        pointsSpent: data.pointsSpent,
+        streamingCode: data.streamingCode,
+        purchasedAt: data.purchasedAt,
+        validUntil: data.validUntil
+      });
+    });
+    
+    return matches;
+  } catch (error) {
+    console.error("Error getting purchased matches:", error);
+    return []; // Retourne un tableau vide en cas d'erreur
+  }
+};
+
+/**
  * Verify if a flight ID is valid
  * @param {string} flightId - The flight ID to verify
  * @returns {Promise<{isValid: boolean, points: number}>} Result object with validation status and points
@@ -177,21 +301,23 @@ export const verifyFlightId = async (flightId) => {
     // Trim and uppercase flight ID for consistent comparison
     const formattedFlightId = flightId.trim().toUpperCase();
     
-    // Query the flightData collection for this flightId
-    const flightQuery = query(
-      collection(db, "flightData"),
-      where("flightId", "==", formattedFlightId)
-    );
+    // Liste des IDs de vol valides (vous pouvez la déplacer vers une collection Firestore)
+    const VALID_FLIGHT_IDS = [
+      "AT100", "AT101", "AT102", "AT103", "AT104", "AT105",
+      "AT200", "AT201", "AT202", "AT203", "AT204", "AT205",
+      "AT300", "AT301", "AT302", "AT303", "AT304", "AT305",
+      "AT400", "AT401", "AT402", "AT403", "AT404", "AT405",
+      "AT500", "AT501", "AT502", "AT503", "AT504", "AT505",
+      "AT600", "AT601", "AT602", "AT603", "AT604", "AT605",
+      "AT700", "AT701", "AT702", "AT703", "AT704", "AT705",
+      "AT800", "AT801", "AT802", "AT803", "AT804", "AT805",
+      "AT900", "AT901", "AT902", "AT903", "AT904", "AT905"
+    ];
     
-    const querySnapshot = await getDocs(flightQuery);
-    
-    // Check if this flight ID exists and is valid
-    if (querySnapshot.empty) {
+    // Check if ID exists in our predefined list
+    if (!VALID_FLIGHT_IDS.includes(formattedFlightId)) {
       return { isValid: false, points: 0, message: "ID de vol non reconnu" };
     }
-    
-    // Get flight data
-    const flightData = querySnapshot.docs[0].data();
     
     // Check if this flight has already been claimed by this user
     const claimedQuery = query(
@@ -207,9 +333,20 @@ export const verifyFlightId = async (flightId) => {
     }
     
     // Flight is valid and not yet claimed
-    // Calculate points based on flight information
-    // In a real app, this would use real flight data metrics like distance
-    let earnedPoints = flightData.basePoints || 100;
+    // Calculate points based on flight ID (simulation)
+    const basePoints = {
+      "AT100": 100, "AT101": 110, "AT102": 120, "AT103": 130, "AT104": 140, "AT105": 150,
+      "AT200": 200, "AT201": 210, "AT202": 220, "AT203": 230, "AT204": 240, "AT205": 250,
+      "AT300": 150, "AT301": 160, "AT302": 170, "AT303": 180, "AT304": 190, "AT305": 200,
+      "AT400": 250, "AT401": 260, "AT402": 270, "AT403": 280, "AT404": 290, "AT405": 300,
+      "AT500": 175, "AT501": 185, "AT502": 195, "AT503": 205, "AT504": 215, "AT505": 225,
+      "AT600": 225, "AT601": 235, "AT602": 245, "AT603": 255, "AT604": 265, "AT605": 275,
+      "AT700": 300, "AT701": 310, "AT702": 320, "AT703": 330, "AT704": 340, "AT705": 350,
+      "AT800": 350, "AT801": 360, "AT802": 370, "AT803": 380, "AT804": 390, "AT805": 400,
+      "AT900": 400, "AT901": 410, "AT902": 420, "AT903": 430, "AT904": 440, "AT905": 450
+    };
+    
+    let earnedPoints = basePoints[formattedFlightId] || 100;
     
     // Record that this user has claimed this flight
     await addDoc(collection(db, "claimedFlights"), {
@@ -381,116 +518,6 @@ export const purchaseMatchAccess = async (matchId) => {
 };
 
 /**
- * Get user's points history
- * @returns {Promise<Array>} Array of points transactions
- */
-export const getPointsHistory = async () => {
-  try {
-    const user = auth.currentUser;
-    if (!user) throw new Error("User not authenticated");
-    
-    const historyQuery = query(
-      collection(db, "pointsHistory"),
-      where("userId", "==", user.uid)
-    );
-    
-    const querySnapshot = await getDocs(historyQuery);
-    
-    const history = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      history.push({
-        id: doc.id,
-        points: data.points,
-        source: data.source,
-        timestamp: data.timestamp ? data.timestamp.toDate() : null
-      });
-    });
-    
-    // Sort by timestamp, newest first
-    return history.sort((a, b) => b.timestamp - a.timestamp);
-  } catch (error) {
-    console.error("Error getting points history:", error);
-    throw error;
-  }
-};
-
-/**
- * Get user's claimed rewards
- * @returns {Promise<Array>} Array of claimed rewards
- */
-export const getClaimedRewards = async () => {
-  try {
-    const user = auth.currentUser;
-    if (!user) throw new Error("User not authenticated");
-    
-    const rewardsQuery = query(
-      collection(db, "claimedRewards"),
-      where("userId", "==", user.uid)
-    );
-    
-    const querySnapshot = await getDocs(rewardsQuery);
-    
-    const rewards = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      rewards.push({
-        id: doc.id,
-        rewardTitle: data.rewardTitle,
-        pointsSpent: data.pointsSpent,
-        accessCode: data.accessCode,
-        claimedAt: data.claimedAt ? data.claimedAt.toDate() : null,
-        expiresAt: data.expiresAt ? data.expiresAt.toDate() : null
-      });
-    });
-    
-    // Sort by claimed date, newest first
-    return rewards.sort((a, b) => b.claimedAt - a.claimedAt);
-  } catch (error) {
-    console.error("Error getting claimed rewards:", error);
-    throw error;
-  }
-};
-
-/**
- * Get user's purchased matches
- * @returns {Promise<Array>} Array of purchased matches
- */
-export const getPurchasedMatches = async () => {
-  try {
-    const user = auth.currentUser;
-    if (!user) throw new Error("User not authenticated");
-    
-    const matchesQuery = query(
-      collection(db, "matchPurchases"),
-      where("userId", "==", user.uid)
-    );
-    
-    const querySnapshot = await getDocs(matchesQuery);
-    
-    const matches = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      matches.push({
-        id: doc.id,
-        teamA: data.teamA,
-        teamB: data.teamB,
-        pointsSpent: data.pointsSpent,
-        streamingCode: data.streamingCode,
-        purchasedAt: data.purchasedAt ? data.purchasedAt.toDate() : null,
-        validUntil: data.validUntil ? data.validUntil.toDate() : null
-      });
-    });
-    
-    // Sort by purchase date, newest first
-    return matches.sort((a, b) => b.purchasedAt - a.purchasedAt);
-  } catch (error) {
-    console.error("Error getting purchased matches:", error);
-    throw error;
-  }
-};
-
-/**
  * Generate a unique access code
  * @returns {string} Unique code
  */
@@ -509,7 +536,8 @@ export const getUserNotifications = async () => {
     
     const notificationsQuery = query(
       collection(db, "notifications"),
-      where("userId", "==", user.uid)
+      where("userId", "==", user.uid),
+      orderBy("date", "desc")
     );
     
     const querySnapshot = await getDocs(notificationsQuery);
@@ -530,7 +558,7 @@ export const getUserNotifications = async () => {
     return notifications;
   } catch (error) {
     console.error("Error getting notifications:", error);
-    throw error;
+    return [];
   }
 };
 
@@ -666,7 +694,7 @@ export const getAvailableGames = async () => {
     return games;
   } catch (error) {
     console.error("Error getting games:", error);
-    throw error;
+    return [];
   }
 };
 
@@ -756,7 +784,7 @@ export const canPlayQuizToday = async () => {
     return lastQuizDate !== today;
   } catch (error) {
     console.error("Error checking quiz availability:", error);
-    throw error;
+    return true;
   }
 };
 
