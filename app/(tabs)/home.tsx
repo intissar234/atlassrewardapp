@@ -23,6 +23,7 @@ import {
   claimDailyReward,
   auth,
   getPointsHistory,
+   checkAndResetDailyStatus, 
   getClaimedRewards,
   getPurchasedMatches 
 } from '../../src/services/firebaseService';
@@ -33,6 +34,7 @@ import { collection, query, where, getDocs, addDoc, doc, getDoc, getFirestore, u
 import { db } from '../../src/config/firebase';
 import { Camera } from 'expo-camera';
 import { BarCodeScanner } from 'expo-barcode-scanner';
+
 import MemoryGame from '../../src/components/games/memorygame.jsx';
 import PuzzleGame from '../../src/components/games/puzzlegame.jsx';
 import QuizGame from '../../src/components/games/quizgame.jsx';
@@ -40,7 +42,6 @@ import SnakeGame from '../../src/components/games/snackgame.jsx';
 import TetrisGame from '../../src/components/games/tetrisgame.jsx';
 const { width } = Dimensions.get('window');
 
-// Type for user data
 interface UserData {
   firstName: string;
   lastName: string;
@@ -50,6 +51,7 @@ interface UserData {
   gamesPlayedToday: number;
   lastPlayedDate: string;
   dailyRewardClaimed: boolean;
+  lastDailyRewardDate?: string; // AJOUTER CETTE LIGNE
   preferredLanguage?: string;
 }
 
@@ -245,8 +247,8 @@ const quizQuestions: QuizQuestion[] = [
     correctAnswer: 2
   }
 ];
-
-export default function HomeScreen() {
+export default function Home() {
+  
  const [userData, setUserData] = useState<UserData>({
    firstName: "",
    lastName: "",
@@ -255,7 +257,8 @@ export default function HomeScreen() {
    pointsBalance: 0,
    gamesPlayedToday: 0,
    lastPlayedDate: "",
-   dailyRewardClaimed: false
+   dailyRewardClaimed: false,
+   lastDailyRewardDate: "" // AJOUTER CETTE LIGNE
  });
  
  const [loading, setLoading] = useState<boolean>(true);
@@ -332,7 +335,12 @@ export default function HomeScreen() {
      })
    ]).start();
  };
-
+// Function to check if daily bonus is available
+const isDailyBonusAvailable = () => {
+  const today = new Date().toDateString();
+  const lastClaimDate = userData.lastDailyRewardDate || '';
+  return lastClaimDate !== today;
+};
  // Function to add notification
  const addNotification = (title: string, message: string, type: string) => {
    const newNotification: Notification = {
@@ -348,27 +356,27 @@ export default function HomeScreen() {
    setUnreadNotifications(prev => prev + 1);
  };
 
- // Function to refresh user data
- const refreshUserData = async () => {
-   try {
-     const data = await getUserProfile();
-     if (data) {
-       setUserData({
-         firstName: data.firstName || "Utilisateur",
-         lastName: data.lastName || "",
-         email: data.email || "",
-         phone: data.phone || "",
-         pointsBalance: data.pointsBalance || 0,
-         gamesPlayedToday: data.gamesPlayedToday || 0,
-         lastPlayedDate: data.lastPlayedDate || todayDate,
-         dailyRewardClaimed: data.dailyRewardClaimed || false,
-         preferredLanguage: data.preferredLanguage || "fr"
-       });
-     }
-   } catch (error) {
-     console.error("Erreur lors de la récupération des données:", error);
-   }
- };
+const refreshUserData = async () => {
+  try {
+    const data = await getUserProfile();
+    if (data) {
+      setUserData({
+        firstName: data.firstName || "Utilisateur",
+        lastName: data.lastName || "",
+        email: data.email || "",
+        phone: data.phone || "",
+        pointsBalance: data.pointsBalance || 0,
+        gamesPlayedToday: data.gamesPlayedToday || 0,
+        lastPlayedDate: data.lastPlayedDate || todayDate,
+        dailyRewardClaimed: data.dailyRewardClaimed || false,
+        lastDailyRewardDate: data.lastDailyRewardDate || '', // AJOUTER CETTE LIGNE
+        preferredLanguage: data.preferredLanguage || "fr"
+      });
+    }
+  } catch (error) {
+    console.error("Erreur lors de la récupération des données:", error);
+  }
+};
 
 // Reward data
  const rewards: Reward[] = [
@@ -473,72 +481,39 @@ export default function HomeScreen() {
 
  // Fetch user data
 useEffect(() => {
-  console.log("🔍 === DIAGNOSTIC START ===");
-  
-  // Écouter les changements d'état d'authentification
-  const unsubscribe = auth.onAuthStateChanged(async (user) => {
-    console.log("🔄 Auth state changed:", user?.email);
-    
-    if (user) {
-      console.log("👤 User connecté:", user.email);
-      console.log("🆔 UID:", user.uid);
+  const fetchUserData = async () => {
+    try {
+      // D'abord vérifier et réinitialiser le statut quotidien si nécessaire
+      await checkAndResetDailyStatus();
       
+      // Ensuite récupérer les données utilisateur
+      await refreshUserData();
+      
+      // Load history from Firestore
       try {
-        console.log("📞 Appel de getUserProfile...");
-        const data = await getUserProfile();
-        console.log("📋 Données reçues:", JSON.stringify(data, null, 2));
-        
-        if (data) {
-          console.log("✅ Données trouvées - firstName:", data.firstName);
-          console.log("✅ Données trouvées - lastName:", data.lastName);
-          
-          setUserData({
-            firstName: data.firstName || "Utilisateur",
-            lastName: data.lastName || "",
-            email: data.email || "",
-            phone: data.phone || "",
-            pointsBalance: data.pointsBalance || 0,
-            gamesPlayedToday: data.gamesPlayedToday || 0,
-            lastPlayedDate: data.lastPlayedDate || todayDate,
-            dailyRewardClaimed: data.dailyRewardClaimed || false,
-            preferredLanguage: data.preferredLanguage || "fr"
-          });
-        } else {
-          console.log("❌ Aucune donnée trouvée");
-        }
-        
-        // Load history from Firestore
-        try {
-          const history = await getPointsHistory();
-          setHistoryItems(history);
-        } catch (error) {
-          console.error("Error loading history:", error);
-        }
-        
-        // Load claimed rewards from Firestore
-        try {
-          const rewards = await getClaimedRewards();
-          setClaimedRewards(rewards);
-        } catch (error) {
-          console.error("Error loading claimed rewards:", error);
-        }
-        
+        const history = await getPointsHistory();
+        setHistoryItems(history);
       } catch (error) {
-        console.error("💥 ERREUR:", error);
-        Alert.alert("Erreur", "Impossible de charger vos données");
-      } finally {
-        setLoading(false);
+        console.error("Error loading history:", error);
       }
-    } else {
-      console.log("❌ Aucun utilisateur connecté");
+      
+      // Load claimed rewards from Firestore
+      try {
+        const rewards = await getClaimedRewards();
+        setClaimedRewards(rewards);
+      } catch (error) {
+        console.error("Error loading claimed rewards:", error);
+      }
+      
+    } catch (error) {
+      console.error("Erreur lors de la récupération des données:", error);
+      Alert.alert("Erreur", "Impossible de charger vos données");
+    } finally {
       setLoading(false);
-      // Rediriger vers la page de connexion si nécessaire
-      // router.replace('/login');
     }
-  });
+  };
 
-  // Cleanup function
-  return () => unsubscribe();
+  fetchUserData();
 }, []);
 
  // Handle QR Code scan
@@ -701,32 +676,43 @@ useEffect(() => {
    }
  };
 
- // Function to claim daily reward
  const claimDailyChallenge = async () => {
-   try {
-     setScreenLoading(true);
-     const points = 50;
-     await claimDailyReward(points);
-     
-     // Refresh user data to get updated balance
-     await refreshUserData();
-     
-     // Add notification
-     addNotification(
-       "Bonus quotidien réclamé!",
-       `Vous avez reçu votre bonus quotidien de ${points} points`,
-       "bonus"
-     );
-     
-     animateMoneyBag(); // Animate beztam when points are added
-     Alert.alert("Félicitations!", `Vous avez reçu votre bonus quotidien de ${points} points!`);
-   } catch (error) {
-     console.error("Erreur lors de la réclamation:", error);
-     Alert.alert("Erreur", "Impossible de réclamer la récompense");
-   } finally {
-     setScreenLoading(false);
-   }
- };
+  try {
+    setScreenLoading(true);
+    
+    // Vérifier si l'utilisateur peut réclamer le bonus aujourd'hui
+    const today = new Date().toDateString();
+    const lastClaimDate = userData.lastDailyRewardDate || '';
+    
+    if (lastClaimDate === today) {
+      setScreenLoading(false);
+      setErrorMessage("Vous avez déjà réclamé votre bonus quotidien aujourd'hui. Revenez demain !");
+      setShowErrorModal(true);
+      return;
+    }
+    
+    const points = 50;
+    await claimDailyReward(points);
+    
+    // Refresh user data to get updated balance
+    await refreshUserData();
+    
+    // Add notification
+    addNotification(
+      "Bonus quotidien réclamé!",
+      `Vous avez reçu votre bonus quotidien de ${points} points`,
+      "bonus"
+    );
+    
+    animateMoneyBag(); // Animate beztam when points are added
+    Alert.alert("Félicitations!", `Vous avez reçu votre bonus quotidien de ${points} points!`);
+  } catch (error) {
+    console.error("Erreur lors de la réclamation:", error);
+    Alert.alert("Erreur", "Impossible de réclamer la récompense");
+  } finally {
+    setScreenLoading(false);
+  }
+};
  
  // Function to scan QR code
  const scanQRCode = () => {
@@ -1139,9 +1125,25 @@ const handleDeleteAccount = async () => {
 // Function to play the daily game - Chooses a random game from available games
 const playDayGame = () => {
   setShowGamesModal(false);
-  setShowMemoryGameModal(true);
+  
+  // Choisir un jeu aléatoire pour le jeu du jour
+  const games = ['memory', 'tetris', 'snake'];
+  const randomGame = games[Math.floor(Math.random() * games.length)];
+  
+  switch(randomGame) {
+    case 'memory':
+      setShowMemoryGameModal(true);
+      break;
+    case 'tetris':
+      setShowTetrisModal(true);
+      break;
+    case 'snake':
+      setShowSnakeGameModal(true);
+      break;
+    default:
+      setShowMemoryGameModal(true);
+  }
 };
-
 // Function to play the quick quiz
 const playQuickQuiz = async () => {
   setShowGamesModal(false);
@@ -1299,32 +1301,35 @@ return (
       </TouchableOpacity>
       
       {/* Daily bonus */}
-      <TouchableOpacity 
-        style={[
-          styles.dailyBonusCard,
-          userData.dailyRewardClaimed && styles.disabledCard
-        ]}
-        onPress={claimDailyChallenge}
-        disabled={userData.dailyRewardClaimed}
-      >
-        <View style={styles.cardContent}>
-          <View>
-            <Text style={styles.cardTitle}>Bonus Quotidien</Text>
-            <Text style={styles.cardDescription}>
-              Réclamez vos 50 points gratuits du jour!
-            </Text>
-          </View>
-          <View style={styles.pointsBadge}>
-            <Text style={styles.pointsBadgeText}>+50</Text>
-          </View>
-        </View>
-        
-        {userData.dailyRewardClaimed && (
-          <View style={styles.claimedOverlay}>
-            <Text style={styles.claimedText}>Réclamé aujourd'hui</Text>
-          </View>
-        )}
-      </TouchableOpacity>
+     <TouchableOpacity 
+  style={[
+    styles.dailyBonusCard,
+    !isDailyBonusAvailable() && styles.disabledCard
+  ]}
+  onPress={claimDailyChallenge}
+  disabled={!isDailyBonusAvailable()}
+>
+  <View style={styles.cardContent}>
+    <View>
+      <Text style={styles.cardTitle}>Bonus Quotidien</Text>
+      <Text style={styles.cardDescription}>
+        {isDailyBonusAvailable() 
+          ? "Réclamez vos 50 points gratuits du jour!"
+          : "Revenez demain pour votre bonus quotidien!"
+        }
+      </Text>
+    </View>
+    <View style={styles.pointsBadge}>
+      <Text style={styles.pointsBadgeText}>+50</Text>
+    </View>
+  </View>
+  
+  {!isDailyBonusAvailable() && (
+    <View style={styles.claimedOverlay}>
+      <Text style={styles.claimedText}>Réclamé aujourd'hui</Text>
+    </View>
+  )}
+</TouchableOpacity>
       
       {/* Flight ID Input Button */}
       <TouchableOpacity
@@ -2012,8 +2017,7 @@ return (
                 <Ionicons name="calendar" size={36} color="#c60c30" />
               </View>
               <Text style={styles.gameTitle}>Jeu du jour</Text>
-              <Text style={styles.gameDescription}>Memory Game - Retournez les cartes pour gagner des points bonus</Text>
-              <View style={styles.gamePointsBadge}>
+<Text style={styles.gameDescription}>Jeu aléatoire quotidien - Memory, Tetris ou Snake pour gagner des points bonus</Text>              <View style={styles.gamePointsBadge}>
                 <Text style={styles.gamePointsText}>+20</Text>
               </View>
             </TouchableOpacity>

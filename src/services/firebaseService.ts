@@ -11,8 +11,27 @@ import {
   where,
   getDocs,
   addDoc,
+   setDoc,
   orderBy
 } from 'firebase/firestore';
+// Fonction pour créer le profil utilisateur dans Firestore
+export const createUserProfile = async ({ firstName, lastName, email }) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("User not authenticated");
+
+  await setDoc(doc(db, "users", user.uid), {
+    firstName,
+    lastName,
+    email,
+    pointsBalance: 0,
+    gamesPlayedToday: 0,
+    lastPlayedDate: new Date().toDateString(),
+    dailyRewardClaimed: false,
+    lastDailyRewardDate: '',
+    createdAt: serverTimestamp()
+  });
+};
+
 
 /**
  * Get the current user profile
@@ -39,6 +58,7 @@ export const getUserProfile = async () => {
         gamesPlayedToday: data.gamesPlayedToday || 0,
         lastPlayedDate: data.lastPlayedDate || new Date().toDateString(),
         dailyRewardClaimed: data.dailyRewardClaimed || false,
+        lastDailyRewardDate: data.lastDailyRewardDate || "", // NOUVEAU: Champ ajouté
         preferredLanguage: data.preferredLanguage || "fr"
       };
     } else {
@@ -131,7 +151,7 @@ export const updateGamesPlayed = async () => {
 };
 
 /**
- * Claim daily reward if not already claimed today
+ * Claim daily reward if not already claimed today - VERSION CORRIGÉE
  * @param {number} points - Points to add as daily reward
  * @returns {Promise<boolean>} Success or failure
  */
@@ -140,6 +160,9 @@ export const claimDailyReward = async (points) => {
     const user = auth.currentUser;
     if (!user) throw new Error("User not authenticated");
 
+    const today = new Date().toDateString();
+    
+    // Vérifier d'abord si l'utilisateur a déjà réclamé aujourd'hui
     const userDocRef = doc(db, "users", user.uid);
     const userDoc = await getDoc(userDocRef);
     const userData = userDoc.data();
@@ -148,17 +171,16 @@ export const claimDailyReward = async (points) => {
       throw new Error("User data not found");
     }
     
-    const today = new Date().toDateString();
-    
-    // Check if already claimed today
-    if (userData.lastPlayedDate === today && userData.dailyRewardClaimed) {
-      throw new Error("Daily reward already claimed");
+    // NOUVEAU: Vérifier avec lastDailyRewardDate au lieu de lastPlayedDate
+    if (userData.lastDailyRewardDate === today) {
+      throw new Error("Bonus quotidien déjà réclamé aujourd'hui");
     }
     
     // Update reward status and add points
     await updateDoc(userDocRef, {
       pointsBalance: increment(points),
       dailyRewardClaimed: true,
+      lastDailyRewardDate: today, // NOUVEAU: Enregistrer la date de réclamation
       lastPlayedDate: today,
       updatedAt: serverTimestamp()
     });
@@ -175,6 +197,40 @@ export const claimDailyReward = async (points) => {
   } catch (error) {
     console.error("Error claiming daily reward:", error);
     throw error;
+  }
+};
+
+/**
+ * NOUVELLE FONCTION: Vérifier et réinitialiser le statut quotidien
+ * @returns {Promise<boolean>} Success status
+ */
+export const checkAndResetDailyStatus = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return false;
+    
+    const today = new Date().toDateString();
+    const userDocRef = doc(db, "users", user.uid);
+    const userDoc = await getDoc(userDocRef);
+    const userData = userDoc.data();
+    
+    if (!userData) return false;
+    
+    // Si la dernière date de réclamation n'est pas aujourd'hui, réinitialiser le statut
+    if (userData.lastDailyRewardDate !== today) {
+      await updateDoc(userDocRef, {
+        dailyRewardClaimed: false,
+        gamesPlayedToday: 0,
+        lastPlayedDate: today,
+        updatedAt: serverTimestamp()
+      });
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error("Erreur lors de la vérification du statut quotidien:", error);
+    return false;
   }
 };
 
@@ -551,7 +607,7 @@ export const getUserNotifications = async () => {
         message: data.message,
         type: data.type,
         read: data.read || false,
-        date: data.date ? data.date.toDate() : null
+       date: data.date ? data.date.toDate() : null
       });
     });
     

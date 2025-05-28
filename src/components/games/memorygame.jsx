@@ -152,9 +152,15 @@ const MemoryGame = ({ onComplete }) => {
           onPress={() => flipCard(index)}
           disabled={card.flipped || matchedPairs.includes(card.value)}
         >
-          <Text style={styles.cardText}>
-            {card.flipped || matchedPairs.includes(card.value) ? card.value : '?'}
-          </Text>
+          <Text
+  style={[
+    styles.cardText,
+    (card.flipped || matchedPairs.includes(card.value)) && { color: '#c60c30' } // rouge RAM si retournée
+  ]}
+>
+  {card.flipped || matchedPairs.includes(card.value) ? card.value : '?'}
+</Text>
+
         </TouchableOpacity>
       ))}
     </View>
